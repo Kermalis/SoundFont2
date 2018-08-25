@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Text;
 
 namespace Kermalis.SoundFont2
 {
@@ -9,111 +10,157 @@ namespace Kermalis.SoundFont2
         SdtaListChunk soundChunk;
         PdtaListChunk hydraChunk;
 
-        internal BinaryWriter Writer { get; private set; }
+        internal int IBAGCount => hydraChunk.IBAGSubChunk.Count;
+        internal int IGENCount => hydraChunk.IGENSubChunk.Count;
+        internal int IMODCount => hydraChunk.IMODSubChunk.Count;
+        internal int PBAGCount => hydraChunk.PBAGSubChunk.Count;
+        internal int PGENCount => hydraChunk.PGENSubChunk.Count;
+        internal int PMODCount => hydraChunk.PMODSubChunk.Count;
 
-        internal int IBAGCount => hydraChunk.ibag_subchunk.Count;
-        internal int IGENCount => hydraChunk.igen_subchunk.Count;
-        internal int IMODCount => hydraChunk.imod_subchunk.Count;
-        internal int PBAGCount => hydraChunk.pbag_subchunk.Count;
-        internal int PGENCount => hydraChunk.pgen_subchunk.Count;
-        internal int PMODCount => hydraChunk.pmod_subchunk.Count;
-
-        public SF2(string engine = "", string bank = "", string rom = "", ushort rom_revision_major = 0, ushort rom_revision_minor = 0, string date = "", string designer = "", string products = "", string copyright = "", string comment = "", string tools = "")
+        // For creating
+        public SF2(string engine = "", string bank = "")
         {
-            SFVersionTag rom_revision = rom_revision_major == 0 && rom_revision_minor == 0 ? null : new SFVersionTag(rom_revision_major, rom_revision_minor);
-            infoChunk = new InfoListChunk(this, engine, bank, rom, rom_revision, date, designer, products, copyright, comment, tools);
+            infoChunk = new InfoListChunk(this, engine, bank);
             soundChunk = new SdtaListChunk(this);
             hydraChunk = new PdtaListChunk(this);
         }
 
-        public void AddSample(short[] pcm16, string name, bool bLoop, uint loop_pos, uint sample_rate, sbyte original_pitch, sbyte pitch_correction)
+        // For reading
+        public SF2(string path)
         {
-            uint dir_offset = soundChunk.smpl_subchunk.AddSample(pcm16, bLoop, loop_pos);
+            using (var reader = new BinaryReader(File.Open(path, FileMode.Open), Encoding.ASCII))
+            {
+                char[] chars = reader.ReadChars(4);
+                if (new string(chars) != "RIFF")
+                    throw new InvalidDataException("RIFF header was not found at the start of the file.");
+
+                uint size = reader.ReadUInt32();
+                chars = reader.ReadChars(4);
+                if (new string(chars) != "sfbk")
+                    throw new InvalidDataException("sfbk header was not found at the expected offset.");
+
+                infoChunk = new InfoListChunk(this, reader);
+                soundChunk = new SdtaListChunk(this, reader);
+                hydraChunk = new PdtaListChunk(this, reader);
+            }
+            ;
+        }
+
+        public void Save(string path)
+        {
+            using (var writer = new BinaryWriter(File.Open(path, FileMode.Create), Encoding.ASCII))
+            {
+                AddTerminals();
+
+                size = 4;
+                size += infoChunk.CalculateSize() + 8;
+                size += soundChunk.CalculateSize() + 8;
+                size += hydraChunk.CalculateSize() + 8;
+
+                writer.Write("RIFF".ToCharArray());
+                writer.Write(size);
+                writer.Write("sfbk".ToCharArray());
+
+                infoChunk.Write(writer);
+                soundChunk.Write(writer);
+                hydraChunk.Write(writer);
+            }
+        }
+
+
+        public void AddSample(short[] pcm16, string name, bool bLoop, uint loopPos, uint sampleRate, byte originalKey, sbyte pitchCorrection)
+        {
+            uint start = soundChunk.SMPLSubChunk.AddSample(pcm16, bLoop, loopPos);
             // If the sample is looped the standard requires us to add the 8 bytes from the start of the loop to the end
-            uint dir_end, dir_loop_end, dir_loop_start;
+            uint end, loopEnd, loopStart;
 
             uint len = (uint)pcm16.Length;
             if (bLoop)
             {
-                dir_end = dir_offset + len + 8;
-                dir_loop_end = dir_offset + len;
-                dir_loop_start = dir_offset + loop_pos;
+                end = start + len + 8;
+                loopStart = start + loopPos; loopEnd = start + len;                
             }
             else
             {
-                dir_end = dir_offset + len;
-                dir_loop_end = 0;
-                dir_loop_start = 0;
+                end = start + len;
+                loopStart = 0; loopEnd = 0;                
             }
 
-            AddSampleHeader(name, dir_offset, dir_end, dir_loop_start, dir_loop_end, sample_rate, original_pitch, pitch_correction);
+            AddSampleHeader(name, start, end, loopStart, loopEnd, sampleRate, originalKey, pitchCorrection);
         }
-
         public void AddInstrument(string name)
         {
-            hydraChunk.inst_subchunk.AddInstrument(new SF2Inst(this, name));
+            hydraChunk.INSTSubChunk.AddInstrument(new SF2Instrument(this)
+            {
+                InstrumentName = name,
+                InstrumentBagIndex = (ushort)IBAGCount
+            });
         }
         public void AddINSTBag()
         {
-            hydraChunk.ibag_subchunk.AddBag(new SF2Bag(this, false));
+            hydraChunk.IBAGSubChunk.AddBag(new SF2Bag(this, false));
         }
         public void AddINSTModulator()
         {
-            hydraChunk.imod_subchunk.AddModulator(new SF2ModList(this));
+            hydraChunk.IMODSubChunk.AddModulator(new SF2ModulatorList(this));
         }
         public void AddINSTGenerator()
         {
-            hydraChunk.igen_subchunk.AddGenerator(new SF2GenList(this));
+            hydraChunk.IGENSubChunk.AddGenerator(new SF2GeneratorList(this));
         }
-        public void AddINSTGenerator(SF2Generator operation, GenAmountType genAmountType)
+        public void AddINSTGenerator(SF2Generator operation, SF2GeneratorAmount genAmountType)
         {
-            hydraChunk.igen_subchunk.AddGenerator(new SF2GenList(this, operation, genAmountType));
+            hydraChunk.IGENSubChunk.AddGenerator(new SF2GeneratorList(this)
+            {
+                Generator = operation,
+                GeneratorAmount = genAmountType
+            });
         }
-
-        public void AddPreset(string name, ushort patch, ushort bank)
+        public void AddPreset(string name, ushort preset, ushort bank)
         {
-            hydraChunk.phdr_subchunk.AddPreset(new SF2PresetHeader(this, name, patch, bank));
+            hydraChunk.PHDRSubChunk.AddPreset(new SF2PresetHeader(this)
+            {
+                PresetName = name,
+                Preset = preset,
+                Bank = bank,
+                PresetBagIndex = (ushort)PBAGCount
+            });
         }
         public void AddPresetBag()
         {
-            hydraChunk.pbag_subchunk.AddBag(new SF2Bag(this, true));
+            hydraChunk.PBAGSubChunk.AddBag(new SF2Bag(this, true));
         }
         public void AddPresetModulator()
         {
-            hydraChunk.pmod_subchunk.AddModulator(new SF2ModList(this));
+            hydraChunk.PMODSubChunk.AddModulator(new SF2ModulatorList(this));
         }
         public void AddPresetGenerator()
         {
-            hydraChunk.pgen_subchunk.AddGenerator(new SF2GenList(this));
+            hydraChunk.PGENSubChunk.AddGenerator(new SF2GeneratorList(this));
         }
-        public void AddPresetGenerator(SF2Generator operation, GenAmountType genAmountType)
+        public void AddPresetGenerator(SF2Generator operation, SF2GeneratorAmount genAmountType)
         {
-            hydraChunk.pgen_subchunk.AddGenerator(new SF2GenList(this, operation, genAmountType));
+            hydraChunk.PGENSubChunk.AddGenerator(new SF2GeneratorList(this)
+            {
+                Generator = operation,
+                GeneratorAmount = genAmountType
+            });
         }
 
-
-        public void Save(string path)
+        void AddSampleHeader(string name, uint start, uint end, uint loopStart, uint loopEnd, uint sampleRate, byte originalKey, sbyte pitchCorrection)
         {
-            Writer = new BinaryWriter(File.Open(path, FileMode.Create));
-
-            AddTerminals();
-
-            size = 4;
-            size += infoChunk.Size + 8;
-            size += soundChunk.CalculateSize() + 8;
-            size += hydraChunk.CalculateSize() + 8;
-
-            Writer.Write("RIFF".ToCharArray());
-            Writer.Write(size);
-            Writer.Write("sfbk".ToCharArray());
-
-            infoChunk.Write();
-            soundChunk.Write();
-            hydraChunk.Write();
-
-            Writer.Close();
+            hydraChunk.SHDRSubChunk.AddSample(new SF2SampleHeader(this)
+            {
+                SampleName = name,
+                Start = start,
+                End = end,
+                LoopStart = loopStart,
+                LoopEnd = loopEnd,
+                SampleRate = sampleRate,
+                OriginalKey = originalKey,
+                PitchCorrection = pitchCorrection
+            });
         }
-
         // Required by the standard
         void AddTerminals()
         {
@@ -122,15 +169,10 @@ namespace Kermalis.SoundFont2
             AddINSTBag();
             AddINSTGenerator();
             AddINSTModulator();
-            AddPreset("EOP", 255, 255);
+            AddPreset("EOP", 0xFF, 0xFF);
             AddPresetBag();
             AddPresetGenerator();
             AddPresetModulator();
-        }
-
-        void AddSampleHeader(string name, uint start, uint end, uint start_loop, uint end_loop, uint sample_rate, sbyte original_pitch, sbyte pitch_correction)
-        {
-            hydraChunk.shdr_subchunk.AddSample(new SF2Sample(this, name, start, end, start_loop, end_loop, sample_rate, original_pitch, pitch_correction));
         }
     }
 }

@@ -1,623 +1,790 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace Kermalis.SoundFont2
 {
-    internal class SF2Chunk
+    public class SF2Chunk
     {
-        char[] chunk_name; // Length 4
-        internal uint Size; // Size in bytes
+        readonly SF2 sf2;
 
-        protected SF2 sf2;
+        readonly char[] chunkName; // Length 4
+        public string ChunkName => new string(chunkName);
+        public uint Size { get; protected set; } // Size in bytes
 
         protected SF2Chunk(SF2 inSf2, string name)
         {
-            chunk_name = name.ToCharArray();
             sf2 = inSf2;
+            chunkName = name.ToCharArray();
         }
-
-        internal virtual void Write()
+        protected SF2Chunk(SF2 inSf2, BinaryReader reader)
         {
-            sf2.Writer.Write(chunk_name);
-            sf2.Writer.Write(Size);
+            sf2 = inSf2;
+            chunkName = reader.ReadChars(4);
+            Size = reader.ReadUInt32();
+        }
+        internal virtual void Write(BinaryWriter writer)
+        {
+            writer.Write(chunkName);
+            writer.Write(Size);
         }
     }
-
-    internal class ListChunk : SF2Chunk
+    
+    public abstract class SF2ListChunk : SF2Chunk
     {
-        char[] chunk_name; // Length 4
+        readonly char[] listChunkName; // Length 4
+        public string ListChunkName => new string(listChunkName);
 
-        protected ListChunk(SF2 inSf2, string name) : base(inSf2, "LIST")
+        protected SF2ListChunk(SF2 inSf2, string name) : base(inSf2, "LIST")
         {
-            chunk_name = name.ToCharArray();
+            listChunkName = name.ToCharArray();
             Size = 4;
         }
-
-        internal override void Write()
+        protected SF2ListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            base.Write();
-            sf2.Writer.Write(chunk_name);
+            listChunkName = reader.ReadChars(4);
         }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            writer.Write(listChunkName);
+        }
+
+        public abstract uint CalculateSize();
     }
-
-    internal class SF2PresetHeader
+    
+    public sealed class SF2PresetHeader
     {
-        internal static uint Size = 38;
-        SF2 sf2;
+        public const uint Size = 38;
+        readonly SF2 sf2;
 
-        char[] ach_preset_name; // Length 20
-        ushort wPreset; // Patch #
-        ushort wBank; // Bank #
-        ushort wPresetBagNdx; // Index to "bag" of instruments
-        const uint dwLibrary = 0;
-        const uint dwGenre = 0;
-        const uint dwMorphology = 0;
+        readonly char[] presetName; // Length 20
+        public string PresetName
+        {
+            get => new string(presetName);
+            set => SF2Utils.TruncateOrNot(presetName, value, 20);
+        }
+        public ushort Preset, Bank, PresetBagIndex;
+        // Reserved for future implementations
+        readonly uint library = 0, genre = 0, morphology = 0;
 
-        internal SF2PresetHeader(SF2 inSf2, string name, ushort patch, ushort bank)
+        internal SF2PresetHeader(SF2 inSf2)
         {
             sf2 = inSf2;
-            ach_preset_name = new char[20];
-            var temp = name.ToCharArray().Take(20).ToArray();
-            Buffer.BlockCopy(temp, 0, ach_preset_name, 0, temp.Length * 2);
-            wPreset = patch;
-            wBank = bank;
-            wPresetBagNdx = (ushort)sf2.PBAGCount;
+        }
+        internal SF2PresetHeader(SF2 inSf2, BinaryReader reader)
+        {
+            sf2 = inSf2;
+            presetName = reader.ReadChars(20);
+            Preset = reader.ReadUInt16();
+            Bank = reader.ReadUInt16();
+            PresetBagIndex = reader.ReadUInt16();
+            library = reader.ReadUInt32();
+            genre = reader.ReadUInt32();
+            morphology = reader.ReadUInt32();
+        }
+        internal void Write(BinaryWriter writer)
+        {
+            writer.Write(presetName);
+            writer.Write(Preset);
+            writer.Write(Bank);
+            writer.Write(PresetBagIndex);
+            writer.Write(library);
+            writer.Write(genre);
+            writer.Write(morphology);
         }
 
-        internal void Write()
-        {
-            sf2.Writer.Write(ach_preset_name);
-            sf2.Writer.Write(wPreset);
-            sf2.Writer.Write(wBank);
-            sf2.Writer.Write(wPresetBagNdx);
-            sf2.Writer.Write(dwLibrary);
-            sf2.Writer.Write(dwGenre);
-            sf2.Writer.Write(dwMorphology);
-        }
+        public override string ToString() => $"Preset Header - Bank = {Bank}, " +
+            $"\nPreset = {Preset}, " +
+            $"\nName = \"{PresetName}\"";
     }
 
-    internal class SF2Bag
+    // Covers sfPresetBag and sfInstBag
+    public sealed class SF2Bag
     {
-        internal static uint Size = 4;
-        SF2 sf2;
+        public const uint Size = 4;
+        readonly SF2 sf2;
 
-        ushort wGenNdx; // Index of list of generators
-        ushort wModNdx; // Index of list of modulators
+        public ushort GeneratorIndex; // Index in list of generators
+        public ushort ModulatorIndex; // Index in list of modulators
 
         internal SF2Bag(SF2 inSf2, bool preset)
         {
             sf2 = inSf2;
             if (preset)
             {
-                wGenNdx = (ushort)sf2.PGENCount;
-                wModNdx = (ushort)sf2.PMODCount;
+                GeneratorIndex = (ushort)sf2.PGENCount;
+                ModulatorIndex = (ushort)sf2.PMODCount;
             }
             else
             {
-                wGenNdx = (ushort)sf2.IGENCount;
-                wModNdx = (ushort)sf2.IMODCount;
+                GeneratorIndex = (ushort)sf2.IGENCount;
+                ModulatorIndex = (ushort)sf2.IMODCount;
             }
         }
-
-        internal void Write()
+        internal SF2Bag(SF2 inSf2, BinaryReader reader)
         {
-            sf2.Writer.Write(wGenNdx);
-            sf2.Writer.Write(wModNdx);
+            sf2 = inSf2;
+            GeneratorIndex = reader.ReadUInt16();
+            ModulatorIndex = reader.ReadUInt16();
         }
+        internal void Write(BinaryWriter writer)
+        {
+            writer.Write(GeneratorIndex);
+            writer.Write(ModulatorIndex);
+        }
+
+        public override string ToString() => $"Bag - Generator index = {GeneratorIndex}, " +
+            $"\nModulator index = {ModulatorIndex}";
     }
 
-    internal class SF2ModList
+    // Covers sfModList and sfInstModList
+    public sealed class SF2ModulatorList
     {
-        internal static uint Size = 10;
-        SF2 sf2;
+        public const uint Size = 10;
+        readonly SF2 sf2;
 
-        SF2Modulator sfModSrcOper;
-        SF2Generator sfModDestOper;
-        ushort modAmount;
-        SF2Modulator sfModAmtSrcOper;
-        SF2Transform sfModTransOper;
+        public SF2Modulator ModulatorSource;
+        public SF2Generator ModulatorDestination;
+        public short ModulatorAmount;
+        public SF2Modulator ModulatorAmountSource;
+        public SF2Transform ModulatorTransform;
 
-        internal SF2ModList(SF2 inSf2)
+        internal SF2ModulatorList(SF2 inSf2)
         {
             sf2 = inSf2;
         }
-
-        internal void Write()
+        internal SF2ModulatorList(SF2 inSf2, BinaryReader reader)
         {
-            sf2.Writer.Write((ushort)sfModSrcOper);
-            sf2.Writer.Write((ushort)sfModDestOper);
-            sf2.Writer.Write(modAmount);
-            sf2.Writer.Write((ushort)sfModAmtSrcOper);
-            sf2.Writer.Write((ushort)sfModTransOper);
+            sf2 = inSf2;
+            ModulatorSource = (SF2Modulator)reader.ReadUInt16();
+            ModulatorDestination = (SF2Generator)reader.ReadUInt16();
+            ModulatorAmount = reader.ReadInt16();
+            ModulatorAmountSource = (SF2Modulator)reader.ReadUInt16();
+            ModulatorTransform = (SF2Transform)reader.ReadUInt16();
         }
+        internal void Write(BinaryWriter writer)
+        {
+            writer.Write((ushort)ModulatorSource);
+            writer.Write((ushort)ModulatorDestination);
+            writer.Write(ModulatorAmount);
+            writer.Write((ushort)ModulatorAmountSource);
+            writer.Write((ushort)ModulatorTransform);
+        }
+
+        public override string ToString() => $"Modulator List - Modulator source = {ModulatorSource}, " +
+            $"\nModulator destination = {ModulatorDestination}, " +
+            $"\nModulator amount = {ModulatorAmount}, " +
+            $"\nModulator amount source = {ModulatorAmountSource}, " +
+            $"\nModulator transform = {ModulatorTransform}";
     }
 
-    internal class SF2GenList
+    public sealed class SF2GeneratorList
     {
-        internal static uint Size = 4;
-        SF2 sf2;
+        public const uint Size = 4;
+        readonly SF2 sf2;
 
-        SF2Generator sfGenOper;
-        GenAmountType genAmount;
+        public SF2Generator Generator;
+        public SF2GeneratorAmount GeneratorAmount;
 
-        internal SF2GenList(SF2 inSf2)
+        internal SF2GeneratorList(SF2 inSf2)
         {
             sf2 = inSf2;
-            genAmount = new GenAmountType();
         }
-        internal SF2GenList(SF2 inSf2, SF2Generator operation, GenAmountType amount)
+        internal SF2GeneratorList(SF2 inSf2, BinaryReader reader)
         {
             sf2 = inSf2;
-            sfGenOper = operation;
-            genAmount = amount;
+            Generator = (SF2Generator)reader.ReadUInt16();
+            GeneratorAmount = new SF2GeneratorAmount { UAmount = reader.ReadUInt16() };
+        }
+        public void Write(BinaryWriter writer)
+        {
+            writer.Write((ushort)Generator);
+            writer.Write(GeneratorAmount.UAmount);
         }
 
-        internal void Write()
-        {
-            sf2.Writer.Write((ushort)sfGenOper);
-            sf2.Writer.Write(genAmount.Value);
-        }
+        public override string ToString() => $"Generator List - Generator = {Generator}, " +
+            $"\nGenerator amount = \"{GeneratorAmount}\"";
     }
-
-    internal class SF2Inst
+    
+    public sealed class SF2Instrument
     {
-        internal static uint Size = 22;
-        SF2 sf2;
+        public const uint Size = 22;
+        readonly SF2 sf2;
 
-        char[] achInstName; // Length 20
-        ushort wInstBagNdx;
+        readonly char[] instrumentName; // Length 20
+        public string InstrumentName
+        {
+            get => new string(instrumentName);
+            set => SF2Utils.TruncateOrNot(instrumentName, value, 20);
+        }
+        public ushort InstrumentBagIndex;
 
-        internal SF2Inst(SF2 inSf2, string name)
+        internal SF2Instrument(SF2 inSf2)
         {
             sf2 = inSf2;
-            achInstName = new char[20];
-            var temp = name.ToCharArray().Take(20).ToArray();
-            Buffer.BlockCopy(temp, 0, achInstName, 0, temp.Length * 2);
-            wInstBagNdx = (ushort)sf2.IBAGCount;
+        }
+        internal SF2Instrument(SF2 inSf2, BinaryReader reader)
+        {
+            sf2 = inSf2;
+            instrumentName = reader.ReadChars(20);
+            InstrumentBagIndex = reader.ReadUInt16();
+        }
+        internal void Write(BinaryWriter writer)
+        {
+            writer.Write(instrumentName);
+            writer.Write(InstrumentBagIndex);
         }
 
-        internal void Write()
-        {
-            sf2.Writer.Write(achInstName);
-            sf2.Writer.Write(wInstBagNdx);
-        }
+        public override string ToString() => $"Instrument - Name = \"{InstrumentName}\"";
     }
-
-    internal class SF2Sample
+    
+    public sealed class SF2SampleHeader
     {
-        internal static uint Size = 46;
-        SF2 sf2;
+        public const uint Size = 46;
+        readonly SF2 sf2;
 
-        char[] achSampleName; // Length 20
-        uint dwStart;
-        uint dwEnd;
-        uint dwStartloop;
-        uint dwEndloop;
-        uint dwSampleRate;
-        sbyte byOriginalPitch;
-        sbyte chPitchCorrection;
-        ushort wSampleLink;
-        SF2SampleLink sfSampleType;
-
-        internal SF2Sample(SF2 inSf2, string name, uint start, uint end, uint start_loop, uint end_loop, uint sample_rate, sbyte original_pitch, sbyte pitch_correction)
+        readonly char[] sampleName; // Length 20
+        public string SampleName
         {
-            achSampleName = new char[20];
-            var temp = name.ToCharArray().Take(20).ToArray();
-            Buffer.BlockCopy(temp, 0, achSampleName, 0, temp.Length * 2);
-            dwStart = start;
-            dwEnd = end;
-            dwStartloop = start_loop;
-            dwEndloop = end_loop;
-            dwSampleRate = sample_rate;
-            byOriginalPitch = original_pitch;
-            chPitchCorrection = pitch_correction;
-            wSampleLink = 0;
-            sfSampleType = SF2SampleLink.monoSample;
+            get => new string(sampleName);
+            set => SF2Utils.TruncateOrNot(sampleName, value, 20);
+        }
+        public uint Start;
+        public uint End;
+        public uint LoopStart;
+        public uint LoopEnd;
+        public uint SampleRate;
+        public byte OriginalKey;
+        public sbyte PitchCorrection;
+        public ushort SampleLink;
+        public SF2SampleLink SampleType = SF2SampleLink.MonoSample;
+
+        internal SF2SampleHeader(SF2 inSf2)
+        {
             sf2 = inSf2;
         }
-
-        internal void Write()
+        internal SF2SampleHeader(SF2 inSf2, BinaryReader reader)
         {
-            sf2.Writer.Write(achSampleName);
-            sf2.Writer.Write(dwStart);
-            sf2.Writer.Write(dwEnd);
-            sf2.Writer.Write(dwStartloop);
-            sf2.Writer.Write(dwEndloop);
-            sf2.Writer.Write(dwSampleRate);
-            sf2.Writer.Write(byOriginalPitch);
-            sf2.Writer.Write(chPitchCorrection);
-            sf2.Writer.Write(wSampleLink);
-            sf2.Writer.Write((ushort)sfSampleType);
+            sf2 = inSf2;
+            sampleName = reader.ReadChars(20);
+            Start = reader.ReadUInt32();
+            End = reader.ReadUInt32();
+            LoopStart = reader.ReadUInt32();
+            LoopEnd = reader.ReadUInt32();
+            SampleRate = reader.ReadUInt32();
+            OriginalKey = reader.ReadByte();
+            PitchCorrection = reader.ReadSByte();
+            SampleLink = reader.ReadUInt16();
+            SampleType = (SF2SampleLink)reader.ReadUInt16();
         }
+        internal void Write(BinaryWriter writer)
+        {
+            writer.Write(sampleName);
+            writer.Write(Start);
+            writer.Write(End);
+            writer.Write(LoopStart);
+            writer.Write(LoopEnd);
+            writer.Write(SampleRate);
+            writer.Write(OriginalKey);
+            writer.Write(PitchCorrection);
+            writer.Write(SampleLink);
+            writer.Write((ushort)SampleType);
+        }
+
+        public override string ToString() => $"Sample - Name = \"{SampleName}\", " +
+            $"\nType = {SampleType}";
     }
 
     #region Sub-Chunks
-
-    internal class VersionSubChunk : SF2Chunk
+    
+    public sealed class VersionSubChunk : SF2Chunk
     {
         // Output format is SoundFont v2.1
-        SFVersionTag revision;
+        public SF2VersionTag Version;
 
-        internal VersionSubChunk(SF2 inSf2, string subchunk_type, SFVersionTag version) : base(inSf2, subchunk_type)
+        internal VersionSubChunk(SF2 inSf2, string subChunkName) : base(inSf2, subChunkName)
         {
-            revision = version;
-            Size += SFVersionTag.Size;
+            Size += SF2VersionTag.Size;
+        }
+        internal VersionSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
+        {
+            Version = new SF2VersionTag
+            {
+                Major = reader.ReadUInt16(),
+                Minor = reader.ReadUInt16()
+            };
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            writer.Write(Version.Major);
+            writer.Write(Version.Minor);
         }
 
-        internal override void Write()
-        {
-            base.Write();
-
-            sf2.Writer.Write(revision.wMajor);
-            sf2.Writer.Write(revision.wMinor);
-        }
+        public override string ToString() => $"Version Chunk - Revision = {Version}";
     }
-
-    internal class HeaderSubChunk : SF2Chunk
+    
+    public sealed class HeaderSubChunk : SF2Chunk
     {
+        readonly int maxSize;
+
         char[] field;
-
-        internal HeaderSubChunk(SF2 inSf2, string subchunk_type, string s, int max_size = 0x100) : base(inSf2, subchunk_type) // Maybe maxsize must go here
+        public string Field
         {
-            var test = s.ToCharArray().ToList();
-            if (test.Count >= max_size) // Input too long; cut it down
+            get => new string(field);
+            set
             {
-                test = test.Take(max_size).ToList();
-                test[max_size - 1] = '\0';
+                var strAsList = value.ToCharArray().ToList();
+                if (strAsList.Count >= maxSize) // Input too long; cut it down
+                {
+                    strAsList = strAsList.Take(maxSize).ToList();
+                    strAsList[maxSize - 1] = '\0';
+                }
+                else if (strAsList.Count % 2 == 0) // Even amount of characters
+                {
+                    strAsList.Add('\0'); // Add two null-terminators to keep the byte count even
+                    strAsList.Add('\0');
+                }
+                else // Odd amount of characters
+                {
+                    strAsList.Add('\0'); // Add one null-terminator since that would make byte the count even
+                }
+                field = strAsList.ToArray();
+                Size = (uint)field.Length;
             }
-            else if (test.Count % 2 == 0) // Even amount of characters
-            {
-                test.Add('\0'); // Add two null-terminators to keep the byte count even
-                test.Add('\0');
-            }
-            else // Odd amount of characters
-            {
-                test.Add('\0'); // Add one null-terminator since that would make byte the count even
-            }
-            field = test.ToArray();
-            Size += (uint)field.Length;
         }
 
-        internal override void Write()
+        internal HeaderSubChunk(SF2 inSf2, string subChunkName, int maxSize = 0x100) : base(inSf2, subChunkName)
         {
-            base.Write();
-
-            sf2.Writer.Write(field);
+            this.maxSize = maxSize;
         }
+        internal HeaderSubChunk(SF2 inSf2, BinaryReader reader, int maxSize = 0x100) : base(inSf2, reader)
+        {
+            this.maxSize = maxSize;
+            field = reader.ReadChars((int)Size);
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            writer.Write(field);
+        }
+
+        public override string ToString() => $"Header Chunk - Name = \"{ChunkName}\", " +
+            $"\nField Max Size = {maxSize}, " +
+            $"\nField = \"{Field}\"";
     }
 
-    internal class SMPLSubChunk : SF2Chunk
+    public sealed class SMPLSubChunk : SF2Chunk
     {
-        List<short[]> wave_list; // Samples
-        List<bool> loop_flag_list; // Loop flag for samples
-        List<uint> loop_pos_list; // Loop start data
+        byte[] binary; // Binary of bytes
 
         internal SMPLSubChunk(SF2 inSf2) : base(inSf2, "smpl")
         {
-            wave_list = new List<short[]>();
-            loop_flag_list = new List<bool>();
-            loop_pos_list = new List<uint>();
+            binary = new byte[0];
+        }
+        internal SMPLSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
+        {
+            binary = reader.ReadBytes((int)Size);
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            writer.Write(binary.ToArray());
         }
 
-        // Returns directory index of the start of the sample
-        internal uint AddSample(short[] pcm16, bool bLoop, uint loop_pos)
+        // Returns index of the start of the sample
+        internal uint AddSample(short[] pcm16, bool bLoop, uint loopPos)
         {
-            wave_list.Add(pcm16);
-            loop_flag_list.Add(bLoop);
-            loop_pos_list.Add(loop_pos);
-
             uint len = (uint)pcm16.Length;
-            uint dir_offset = Size >> 1;
+            uint start = Size / 2;
             // 2 bytes per sample
             // 8 samples after looping
             // 46 empty samples
-            if (bLoop)
-                Size += (len + 8 + 46) * 2;
-            else
-                Size += (len + 46) * 2;
+            uint addedSize = bLoop ? (len + 8 + 46) * 2 : Size += (len + 46) * 2;
+            Size += addedSize;
 
-            return dir_offset;
-        }
+            byte[] newData = new byte[addedSize];
 
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < wave_list.Count; i++)
+            using (var writer = new BinaryWriter(new MemoryStream(newData)))
             {
                 // Write wave
-                for (int j = 0; j < wave_list[i].Length; j++)
-                    sf2.Writer.Write(wave_list[i][j]);
+                for (int j = 0; j < pcm16.Length; j++)
+                    writer.Write(pcm16[j]);
 
-                // If looping is enabled, write 8 samples from after the loop point
-                if (loop_flag_list[i])
+                // If looping is enabled, write 8 samples from the loop point
+                if (bLoop)
                     for (int j = 0; j < 8; j++)
-                        sf2.Writer.Write(wave_list[i][loop_pos_list[i] + j]);
+                        writer.Write(pcm16[loopPos + j]);
 
                 // Write 46 empty samples
                 for (int j = 0; j < 46; j++)
-                    sf2.Writer.Write((short)0);
+                    writer.Write((short)0);
             }
+
+            binary = binary.Concat(newData).ToArray();
+
+            return start;
         }
+
+        public override string ToString() => $"Sample Data Chunk";
     }
 
-    internal class PHDRSubChunk : SF2Chunk
+    public sealed class PHDRSubChunk : SF2Chunk
     {
-        List<SF2PresetHeader> preset_list;
-        internal int Count => preset_list.Count;
+        readonly List<SF2PresetHeader> presets = new List<SF2PresetHeader>();
+        public int Count => presets.Count;
 
-        internal PHDRSubChunk(SF2 inSf2) : base(inSf2, "phdr")
+        internal PHDRSubChunk(SF2 inSf2) : base(inSf2, "phdr") { }
+        internal PHDRSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            preset_list = new List<SF2PresetHeader>();
+            uint amt = Size / SF2PresetHeader.Size;
+            for (int i = 0; i < amt; i++)
+                presets.Add(new SF2PresetHeader(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < presets.Count; i++)
+                presets[i].Write(writer);
         }
 
         internal void AddPreset(SF2PresetHeader preset)
         {
-            preset_list.Add(preset);
+            presets.Add(preset);
             Size += SF2PresetHeader.Size;
         }
 
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < preset_list.Count; i++)
-                preset_list[i].Write();
-        }
+        public override string ToString() => $"Preset Header Chunk - Preset count = {Count}";
     }
 
-    internal class INSTSubChunk : SF2Chunk
+    public sealed class INSTSubChunk : SF2Chunk
     {
-        List<SF2Inst> instrument_list;
-        internal int Count => instrument_list.Count;
+        readonly List<SF2Instrument> instruments = new List<SF2Instrument>();
+        public int Count => instruments.Count;
 
-        internal INSTSubChunk(SF2 inSf2) : base(inSf2, "inst")
+        internal INSTSubChunk(SF2 inSf2) : base(inSf2, "inst") { }
+        internal INSTSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            instrument_list = new List<SF2Inst>();
+            uint amt = Size / SF2Instrument.Size;
+            for (int i = 0; i < amt; i++)
+                instruments.Add(new SF2Instrument(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < instruments.Count; i++)
+                instruments[i].Write(writer);
         }
 
-        internal void AddInstrument(SF2Inst instrument)
+        internal void AddInstrument(SF2Instrument instrument)
         {
-            instrument_list.Add(instrument);
-            Size += SF2Inst.Size;
+            instruments.Add(instrument);
+            Size += SF2Instrument.Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < instrument_list.Count; i++)
-                instrument_list[i].Write();
-        }
+        
+        public override string ToString() => $"Instrument Chunk - Instrument count = {Count}";
     }
 
-    internal class BAGSubChunk : SF2Chunk
+    public sealed class BAGSubChunk : SF2Chunk
     {
-        List<SF2Bag> bag_list;
-        internal int Count => bag_list.Count;
+        readonly List<SF2Bag> bags = new List<SF2Bag>();
+        public int Count => bags.Count;
 
-        internal BAGSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pbag" : "ibag")
+        internal BAGSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pbag" : "ibag") { }
+        internal BAGSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            bag_list = new List<SF2Bag>();
+            uint amt = Size / SF2Bag.Size;
+            for (int i = 0; i < amt; i++)
+                bags.Add(new SF2Bag(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < bags.Count; i++)
+                bags[i].Write(writer);
         }
 
         internal void AddBag(SF2Bag bag)
         {
-            bag_list.Add(bag);
+            bags.Add(bag);
             Size += SF2Bag.Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < bag_list.Count; i++)
-                bag_list[i].Write();
-        }
+        
+        public override string ToString() => $"Bag Chunk - Name = \"{ChunkName}\", " +
+            $"\nBag count = {Count}";
     }
 
-    internal class MODSubChunk : SF2Chunk
+    public sealed class MODSubChunk : SF2Chunk
     {
-        List<SF2ModList> modulator_list;
-        internal int Count => modulator_list.Count;
+        readonly List<SF2ModulatorList> modulators = new List<SF2ModulatorList>();
+        public int Count => modulators.Count;
 
-        internal MODSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pmod" : "imod")
+        internal MODSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pmod" : "imod") { }
+        internal MODSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            modulator_list = new List<SF2ModList>();
+            uint amt = Size / SF2ModulatorList.Size;
+            for (int i = 0; i < amt; i++)
+                modulators.Add(new SF2ModulatorList(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < modulators.Count; i++)
+                modulators[i].Write(writer);
         }
 
-        internal void AddModulator(SF2ModList modulator)
+        internal void AddModulator(SF2ModulatorList modulator)
         {
-            modulator_list.Add(modulator);
-            Size += SF2ModList.Size;
+            modulators.Add(modulator);
+            Size += SF2ModulatorList.Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < modulator_list.Count; i++)
-                modulator_list[i].Write();
-        }
+        
+        public override string ToString() => $"Modulator Chunk - Name = \"{ChunkName}\", " +
+            $"\nModulator count = {Count}";
     }
 
-    internal class GENSubChunk : SF2Chunk
+    public sealed class GENSubChunk : SF2Chunk
     {
-        List<SF2GenList> generator_list;
-        internal int Count => generator_list.Count;
+        readonly List<SF2GeneratorList> generators = new List<SF2GeneratorList>();
+        public int Count => generators.Count;
 
-        internal GENSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pgen" : "igen")
+        internal GENSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pgen" : "igen") { }
+        internal GENSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            generator_list = new List<SF2GenList>();
+            uint amt = Size / SF2GeneratorList.Size;
+            for (int i = 0; i < amt; i++)
+                generators.Add(new SF2GeneratorList(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < generators.Count; i++)
+                generators[i].Write(writer);
         }
 
-        internal void AddGenerator(SF2GenList generator)
+        internal void AddGenerator(SF2GeneratorList generator)
         {
-            generator_list.Add(generator);
-            Size += SF2GenList.Size;
+            generators.Add(generator);
+            Size += SF2GeneratorList.Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < generator_list.Count; i++)
-                generator_list[i].Write();
-        }
+        
+        public override string ToString() => $"Generator Chunk - Name = \"{ChunkName}\", " +
+            $"\nGenerator count = {Count}";
     }
 
-    internal class SHDRSubChunk : SF2Chunk
+    public sealed class SHDRSubChunk : SF2Chunk
     {
-        List<SF2Sample> sample_list;
-        internal int Count => sample_list.Count;
+        readonly List<SF2SampleHeader> samples = new List<SF2SampleHeader>();
+        public int Count => samples.Count;
 
-        internal SHDRSubChunk(SF2 inSf2) : base(inSf2, "shdr")
+        internal SHDRSubChunk(SF2 inSf2) : base(inSf2, "shdr") { }
+        internal SHDRSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            sample_list = new List<SF2Sample>();
+            uint amt = Size / SF2SampleHeader.Size;
+            for (int i = 0; i < amt; i++)
+                samples.Add(new SF2SampleHeader(inSf2, reader));
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            for (int i = 0; i < samples.Count; i++)
+                samples[i].Write(writer);
         }
 
-        internal void AddSample(SF2Sample sample)
+        internal void AddSample(SF2SampleHeader sample)
         {
-            sample_list.Add(sample);
-            Size += SF2Sample.Size;
+            samples.Add(sample);
+            Size += SF2SampleHeader.Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            for (int i = 0; i < sample_list.Count; i++)
-                sample_list[i].Write();
-        }
+        
+        public override string ToString() => $"Sample Header Chunk - Sample header count = {Count}";
     }
 
     #endregion
 
     #region Main Chunks
 
-    internal class InfoListChunk : ListChunk
+    public sealed class InfoListChunk : SF2ListChunk
     {
-        List<SF2Chunk> sub_chunks;
+        readonly List<SF2Chunk> subChunks = new List<SF2Chunk>();
 
-        internal InfoListChunk(SF2 inSf2, string engine, string bank, string rom, SFVersionTag rom_revision, string date, string designer, string products, string copyright, string comment, string tools)
+        /*public InfoListChunk(SF2 inSf2, string engine, string bank, string rom, SF2VersionTag rom_revision, string date, string designer, string products, string copyright, string comment, string tools)
             : base(inSf2, "INFO")
         {
-            sub_chunks = new List<SF2Chunk>() // Mandatory sub-chunks
-            {
-                new VersionSubChunk(inSf2, "ifil", new SFVersionTag(2, 1)),
-                new HeaderSubChunk(inSf2, "isng", string.IsNullOrEmpty(engine) ? "EMU8000" : engine),
-                new HeaderSubChunk(inSf2, "INAM", string.IsNullOrEmpty(bank) ? "General MIDI" : bank),
-            };
 
             // Optional sub-chunks
             if (!string.IsNullOrEmpty(rom))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "irom", rom));
+                subChunks.Add(new HeaderSubChunk(inSf2, "irom", rom));
             if (rom_revision != null)
-                sub_chunks.Add(new VersionSubChunk(inSf2, "iver", rom_revision));
+                subChunks.Add(new VersionSubChunk(inSf2, "iver", rom_revision));
             if (!string.IsNullOrEmpty(date))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "ICRD", date));
+                subChunks.Add(new HeaderSubChunk(inSf2, "ICRD", date));
             if (!string.IsNullOrEmpty(designer))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "IENG", designer));
+                subChunks.Add(new HeaderSubChunk(inSf2, "IENG", designer));
             if (!string.IsNullOrEmpty(products))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "IPRD", products));
+                subChunks.Add(new HeaderSubChunk(inSf2, "IPRD", products));
             if (!string.IsNullOrEmpty(copyright))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "ICOP", copyright));
+                subChunks.Add(new HeaderSubChunk(inSf2, "ICOP", copyright));
             if (!string.IsNullOrEmpty(comment))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "ICMT", comment, 0x10000));
+                subChunks.Add(new HeaderSubChunk(inSf2, "ICMT", comment, 0x10000));
             if (!string.IsNullOrEmpty(tools))
-                sub_chunks.Add(new HeaderSubChunk(inSf2, "ISFT", tools));
-
-            foreach (var sub in sub_chunks)
-                Size += sub.Size + 8;
-        }
-
-        internal override void Write()
+                subChunks.Add(new HeaderSubChunk(inSf2, "ISFT", tools));
+        }*/
+        internal InfoListChunk(SF2 inSf2, string engine = "", string bank = "") : base(inSf2, "INFO")
         {
-            base.Write();
+            // Mandatory sub-chunks
+            subChunks.Add(new VersionSubChunk(inSf2, "ifil") { Version = new SF2VersionTag { Major = 2, Minor = 1 } });
+            subChunks.Add(new HeaderSubChunk(inSf2, "isng") { Field = string.IsNullOrEmpty(engine) ? "EMU8000" : engine });
+            subChunks.Add(new HeaderSubChunk(inSf2, "INAM") { Field = string.IsNullOrEmpty(bank) ? "General MIDI" : bank });
 
-            foreach (var sub in sub_chunks)
-                sub.Write();
+            CalculateSize();
         }
+        internal InfoListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
+        {
+            var startOffset = reader.BaseStream.Position;
+            while (reader.BaseStream.Position < startOffset + Size - 4) // The 4 represents the INFO that was already read
+            {
+                char[] name = reader.ReadChars(4);
+                reader.BaseStream.Position -= 4;
+                string strName = new string(name);
+                switch (strName)
+                {
+                    case "ICMT": subChunks.Add(new HeaderSubChunk(inSf2, reader, 0x10000)); break;
+                    case "ifil":
+                    case "iver": subChunks.Add(new VersionSubChunk(inSf2, reader)); break;
+                    case "isng":
+                    case "INAM":
+                    case "ICRD":
+                    case "IENG":
+                    case "IPRD":
+                    case "ICOP":
+                    case "ISFT":
+                    case "irom": subChunks.Add(new HeaderSubChunk(inSf2, reader)); break;
+                    default:
+                        throw new NotSupportedException($"Unsupported chunk name at 0x{reader.BaseStream.Position:X}: \"{strName}\"");
+                }
+            }
+            CalculateSize();
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            foreach (var sub in subChunks)
+                sub.Write(writer);
+        }
+
+        public override uint CalculateSize()
+        {
+            Size = 4;
+            foreach (var sub in subChunks)
+                Size += sub.Size + 8;
+            return Size;
+        }
+
+        public override string ToString() => $"Info List Chunk - Sub-chunk count = {subChunks.Count}";
     }
 
-    internal class SdtaListChunk : ListChunk
+    public sealed class SdtaListChunk : SF2ListChunk
     {
-        internal readonly SMPLSubChunk smpl_subchunk;
+        public readonly SMPLSubChunk SMPLSubChunk;
 
         internal SdtaListChunk(SF2 inSf2) : base(inSf2, "sdta")
         {
-            smpl_subchunk = new SMPLSubChunk(inSf2);
+            SMPLSubChunk = new SMPLSubChunk(inSf2);
+            CalculateSize();
+        }
+        internal SdtaListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
+        {
+            SMPLSubChunk = new SMPLSubChunk(inSf2, reader);
+            CalculateSize();
+        }
+        internal override void Write(BinaryWriter writer)
+        {
+            base.Write(writer);
+            SMPLSubChunk.Write(writer);
         }
 
-        internal uint CalculateSize()
+        public override uint CalculateSize()
         {
-            Size += smpl_subchunk.Size + 8;
+            Size = 4;
+            Size += SMPLSubChunk.Size + 8;
             return Size;
         }
-
-        internal override void Write()
-        {
-            base.Write();
-
-            smpl_subchunk.Write();
-        }
+        
+        public override string ToString() => $"Sample Data List Chunk";
     }
 
-    internal class PdtaListChunk : ListChunk
+    public sealed class PdtaListChunk : SF2ListChunk
     {
-        internal readonly PHDRSubChunk phdr_subchunk;
-        internal readonly BAGSubChunk pbag_subchunk;
-        internal readonly MODSubChunk pmod_subchunk;
-        internal readonly GENSubChunk pgen_subchunk;
-        internal readonly INSTSubChunk inst_subchunk;
-        internal readonly BAGSubChunk ibag_subchunk;
-        internal readonly MODSubChunk imod_subchunk;
-        internal readonly GENSubChunk igen_subchunk;
-        internal readonly SHDRSubChunk shdr_subchunk;
+        public readonly PHDRSubChunk PHDRSubChunk;
+        public readonly BAGSubChunk PBAGSubChunk;
+        public readonly MODSubChunk PMODSubChunk;
+        public readonly GENSubChunk PGENSubChunk;
+        public readonly INSTSubChunk INSTSubChunk;
+        public readonly BAGSubChunk IBAGSubChunk;
+        public readonly MODSubChunk IMODSubChunk;
+        public readonly GENSubChunk IGENSubChunk;
+        public readonly SHDRSubChunk SHDRSubChunk;
 
         internal PdtaListChunk(SF2 inSf2) : base(inSf2, "pdta")
         {
-            phdr_subchunk = new PHDRSubChunk(inSf2);
-            pbag_subchunk = new BAGSubChunk(inSf2, true);
-            pmod_subchunk = new MODSubChunk(inSf2, true);
-            pgen_subchunk = new GENSubChunk(inSf2, true);
-            inst_subchunk = new INSTSubChunk(inSf2);
-            ibag_subchunk = new BAGSubChunk(inSf2, false);
-            imod_subchunk = new MODSubChunk(inSf2, false);
-            igen_subchunk = new GENSubChunk(inSf2, false);
-            shdr_subchunk = new SHDRSubChunk(inSf2);
+            PHDRSubChunk = new PHDRSubChunk(inSf2);
+            PBAGSubChunk = new BAGSubChunk(inSf2, true);
+            PMODSubChunk = new MODSubChunk(inSf2, true);
+            PGENSubChunk = new GENSubChunk(inSf2, true);
+            INSTSubChunk = new INSTSubChunk(inSf2);
+            IBAGSubChunk = new BAGSubChunk(inSf2, false);
+            IMODSubChunk = new MODSubChunk(inSf2, false);
+            IGENSubChunk = new GENSubChunk(inSf2, false);
+            SHDRSubChunk = new SHDRSubChunk(inSf2);
+            CalculateSize();
+        }
+        internal PdtaListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
+        {
+            PHDRSubChunk = new PHDRSubChunk(inSf2, reader);
+            PBAGSubChunk = new BAGSubChunk(inSf2, reader);
+            PMODSubChunk = new MODSubChunk(inSf2, reader);
+            PGENSubChunk = new GENSubChunk(inSf2, reader);
+            INSTSubChunk = new INSTSubChunk(inSf2, reader);
+            IBAGSubChunk = new BAGSubChunk(inSf2, reader);
+            IMODSubChunk = new MODSubChunk(inSf2, reader);
+            IGENSubChunk = new GENSubChunk(inSf2, reader);
+            SHDRSubChunk = new SHDRSubChunk(inSf2, reader);
+            CalculateSize();
         }
 
-        internal uint CalculateSize()
+        public override uint CalculateSize()
         {
-            Size += phdr_subchunk.Size + 8;
-            Size += pbag_subchunk.Size + 8;
-            Size += pmod_subchunk.Size + 8;
-            Size += pgen_subchunk.Size + 8;
-            Size += inst_subchunk.Size + 8;
-            Size += ibag_subchunk.Size + 8;
-            Size += imod_subchunk.Size + 8;
-            Size += igen_subchunk.Size + 8;
-            Size += shdr_subchunk.Size + 8;
-
+            Size = 4;
+            Size += PHDRSubChunk.Size + 8;
+            Size += PBAGSubChunk.Size + 8;
+            Size += PMODSubChunk.Size + 8;
+            Size += PGENSubChunk.Size + 8;
+            Size += INSTSubChunk.Size + 8;
+            Size += IBAGSubChunk.Size + 8;
+            Size += IMODSubChunk.Size + 8;
+            Size += IGENSubChunk.Size + 8;
+            Size += SHDRSubChunk.Size + 8;
             return Size;
         }
 
-        internal override void Write()
+        internal override void Write(BinaryWriter writer)
         {
-            base.Write();
-
-            phdr_subchunk.Write();
-            pbag_subchunk.Write();
-            pmod_subchunk.Write();
-            pgen_subchunk.Write();
-            inst_subchunk.Write();
-            ibag_subchunk.Write();
-            imod_subchunk.Write();
-            igen_subchunk.Write();
-            shdr_subchunk.Write();
+            base.Write(writer);
+            PHDRSubChunk.Write(writer);
+            PBAGSubChunk.Write(writer);
+            PMODSubChunk.Write(writer);
+            PGENSubChunk.Write(writer);
+            INSTSubChunk.Write(writer);
+            IBAGSubChunk.Write(writer);
+            IMODSubChunk.Write(writer);
+            IGENSubChunk.Write(writer);
+            SHDRSubChunk.Write(writer);
         }
+
+        public override string ToString() => $"Hydra List Chunk";
     }
 
     #endregion
