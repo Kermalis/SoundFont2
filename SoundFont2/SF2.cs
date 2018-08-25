@@ -34,7 +34,7 @@ namespace Kermalis.SoundFont2
                 if (new string(chars) != "RIFF")
                     throw new InvalidDataException("RIFF header was not found at the start of the file.");
 
-                uint size = reader.ReadUInt32();
+                size = reader.ReadUInt32();
                 chars = reader.ReadChars(4);
                 if (new string(chars) != "sfbk")
                     throw new InvalidDataException("sfbk header was not found at the expected offset.");
@@ -43,7 +43,6 @@ namespace Kermalis.SoundFont2
                 soundChunk = new SdtaListChunk(this, reader);
                 hydraChunk = new PdtaListChunk(this, reader);
             }
-            ;
         }
 
         public void Save(string path)
@@ -96,15 +95,15 @@ namespace Kermalis.SoundFont2
                 InstrumentBagIndex = (ushort)IBAGCount
             });
         }
-        public void AddINSTBag()
+        public void AddInstrumentBag()
         {
             hydraChunk.IBAGSubChunk.AddBag(new SF2Bag(this, false));
         }
-        public void AddINSTModulator()
+        public void AddInstrumentModulator()
         {
             hydraChunk.IMODSubChunk.AddModulator(new SF2ModulatorList(this));
         }
-        public void AddINSTGenerator()
+        public void AddInstrumentGenerator()
         {
             hydraChunk.IGENSubChunk.AddGenerator(new SF2GeneratorList(this));
         }
@@ -166,9 +165,9 @@ namespace Kermalis.SoundFont2
         {
             AddSampleHeader("EOS", 0, 0, 0, 0, 0, 0, 0);
             AddInstrument("EOI");
-            AddINSTBag();
-            AddINSTGenerator();
-            AddINSTModulator();
+            AddInstrumentBag();
+            AddInstrumentGenerator();
+            AddInstrumentModulator();
             AddPreset("EOP", 0xFF, 0xFF);
             AddPresetBag();
             AddPresetGenerator();
