@@ -5,7 +5,7 @@ namespace Kermalis.SoundFont2
 {
     static class SF2Utils
     {
-        public static void TruncateOrNot(char[] toArray, string str, int length)
+        public static void TruncateOrNot(string str, int length, ref char[] toArray)
         {
             toArray = new char[length];
             var strAsChars = str.ToCharArray().Take(length).ToArray();

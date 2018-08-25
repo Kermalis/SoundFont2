@@ -9,3 +9,4 @@ A C# library that can read and write SF2 sound bank files.
 * Find a way to seal to SF2Chunk and SF2ListChunk
 * Getting info such as samples, modulators and generators
 * Separate chunks into their own files
+* Have sizes automatically adjust

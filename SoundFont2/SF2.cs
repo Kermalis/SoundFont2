@@ -77,12 +77,12 @@ namespace Kermalis.SoundFont2
             if (bLoop)
             {
                 end = start + len + 8;
-                loopStart = start + loopPos; loopEnd = start + len;                
+                loopStart = start + loopPos; loopEnd = start + len;
             }
             else
             {
                 end = start + len;
-                loopStart = 0; loopEnd = 0;                
+                loopStart = 0; loopEnd = 0;
             }
 
             AddSampleHeader(name, start, end, loopStart, loopEnd, sampleRate, originalKey, pitchCorrection);
@@ -107,7 +107,7 @@ namespace Kermalis.SoundFont2
         {
             hydraChunk.IGENSubChunk.AddGenerator(new SF2GeneratorList(this));
         }
-        public void AddINSTGenerator(SF2Generator operation, SF2GeneratorAmount genAmountType)
+        public void AddInstrumentGenerator(SF2Generator operation, SF2GeneratorAmount genAmountType)
         {
             hydraChunk.IGENSubChunk.AddGenerator(new SF2GeneratorList(this)
             {

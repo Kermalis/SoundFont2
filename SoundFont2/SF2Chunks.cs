@@ -30,7 +30,7 @@ namespace Kermalis.SoundFont2
             writer.Write(Size);
         }
     }
-    
+
     public abstract class SF2ListChunk : SF2Chunk
     {
         readonly char[] listChunkName; // Length 4
@@ -53,17 +53,17 @@ namespace Kermalis.SoundFont2
 
         public abstract uint CalculateSize();
     }
-    
+
     public sealed class SF2PresetHeader
     {
         public const uint Size = 38;
         readonly SF2 sf2;
 
-        readonly char[] presetName; // Length 20
+        char[] presetName; // Length 20
         public string PresetName
         {
             get => new string(presetName);
-            set => SF2Utils.TruncateOrNot(presetName, value, 20);
+            set => SF2Utils.TruncateOrNot(value, 20, ref presetName);
         }
         public ushort Preset, Bank, PresetBagIndex;
         // Reserved for future implementations
@@ -72,6 +72,7 @@ namespace Kermalis.SoundFont2
         internal SF2PresetHeader(SF2 inSf2)
         {
             sf2 = inSf2;
+            presetName = new char[20];
         }
         internal SF2PresetHeader(SF2 inSf2, BinaryReader reader)
         {
@@ -207,23 +208,24 @@ namespace Kermalis.SoundFont2
         public override string ToString() => $"Generator List - Generator = {Generator}, " +
             $"\nGenerator amount = \"{GeneratorAmount}\"";
     }
-    
+
     public sealed class SF2Instrument
     {
         public const uint Size = 22;
         readonly SF2 sf2;
 
-        readonly char[] instrumentName; // Length 20
+        char[] instrumentName; // Length 20
         public string InstrumentName
         {
             get => new string(instrumentName);
-            set => SF2Utils.TruncateOrNot(instrumentName, value, 20);
+            set => SF2Utils.TruncateOrNot(value, 20, ref instrumentName);
         }
         public ushort InstrumentBagIndex;
 
         internal SF2Instrument(SF2 inSf2)
         {
             sf2 = inSf2;
+            instrumentName = new char[20];
         }
         internal SF2Instrument(SF2 inSf2, BinaryReader reader)
         {
@@ -239,17 +241,17 @@ namespace Kermalis.SoundFont2
 
         public override string ToString() => $"Instrument - Name = \"{InstrumentName}\"";
     }
-    
+
     public sealed class SF2SampleHeader
     {
         public const uint Size = 46;
         readonly SF2 sf2;
 
-        readonly char[] sampleName; // Length 20
+        char[] sampleName; // Length 20
         public string SampleName
         {
             get => new string(sampleName);
-            set => SF2Utils.TruncateOrNot(sampleName, value, 20);
+            set => SF2Utils.TruncateOrNot(value, 20, ref sampleName);
         }
         public uint Start;
         public uint End;
@@ -264,6 +266,7 @@ namespace Kermalis.SoundFont2
         internal SF2SampleHeader(SF2 inSf2)
         {
             sf2 = inSf2;
+            sampleName = new char[20];
         }
         internal SF2SampleHeader(SF2 inSf2, BinaryReader reader)
         {
@@ -298,7 +301,7 @@ namespace Kermalis.SoundFont2
     }
 
     #region Sub-Chunks
-    
+
     public sealed class VersionSubChunk : SF2Chunk
     {
         // Output format is SoundFont v2.1
@@ -325,7 +328,7 @@ namespace Kermalis.SoundFont2
 
         public override string ToString() => $"Version Chunk - Revision = {Version}";
     }
-    
+
     public sealed class HeaderSubChunk : SF2Chunk
     {
         readonly int maxSize;
@@ -410,16 +413,16 @@ namespace Kermalis.SoundFont2
             using (var writer = new BinaryWriter(new MemoryStream(newData)))
             {
                 // Write wave
-                for (int j = 0; j < pcm16.Length; j++)
-                    writer.Write(pcm16[j]);
+                for (int i = 0; i < pcm16.Length; i++)
+                    writer.Write(pcm16[i]);
 
                 // If looping is enabled, write 8 samples from the loop point
                 if (bLoop)
-                    for (int j = 0; j < 8; j++)
-                        writer.Write(pcm16[loopPos + j]);
+                    for (int i = 0; i < 8; i++)
+                        writer.Write(pcm16[loopPos + i]);
 
                 // Write 46 empty samples
-                for (int j = 0; j < 46; j++)
+                for (int i = 0; i < 46; i++)
                     writer.Write((short)0);
             }
 
@@ -483,7 +486,7 @@ namespace Kermalis.SoundFont2
             instruments.Add(instrument);
             Size += SF2Instrument.Size;
         }
-        
+
         public override string ToString() => $"Instrument Chunk - Instrument count = {Count}";
     }
 
@@ -511,7 +514,7 @@ namespace Kermalis.SoundFont2
             bags.Add(bag);
             Size += SF2Bag.Size;
         }
-        
+
         public override string ToString() => $"Bag Chunk - Name = \"{ChunkName}\", " +
             $"\nBag count = {Count}";
     }
@@ -540,7 +543,7 @@ namespace Kermalis.SoundFont2
             modulators.Add(modulator);
             Size += SF2ModulatorList.Size;
         }
-        
+
         public override string ToString() => $"Modulator Chunk - Name = \"{ChunkName}\", " +
             $"\nModulator count = {Count}";
     }
@@ -569,7 +572,7 @@ namespace Kermalis.SoundFont2
             generators.Add(generator);
             Size += SF2GeneratorList.Size;
         }
-        
+
         public override string ToString() => $"Generator Chunk - Name = \"{ChunkName}\", " +
             $"\nGenerator count = {Count}";
     }
@@ -598,7 +601,7 @@ namespace Kermalis.SoundFont2
             samples.Add(sample);
             Size += SF2SampleHeader.Size;
         }
-        
+
         public override string ToString() => $"Sample Header Chunk - Sample header count = {Count}";
     }
 
@@ -712,7 +715,7 @@ namespace Kermalis.SoundFont2
             Size += SMPLSubChunk.Size + 8;
             return Size;
         }
-        
+
         public override string ToString() => $"Sample Data List Chunk";
     }
 
