@@ -381,45 +381,46 @@ namespace Kermalis.SoundFont2
 
     public sealed class SMPLSubChunk : SF2Chunk
     {
-        List<byte> binary; // Binary of bytes
+        List<short> samples; // Block of sample data
 
         internal SMPLSubChunk(SF2 inSf2) : base(inSf2, "smpl")
         {
-            binary = new List<byte>();
+            samples = new List<short>();
         }
         internal SMPLSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            binary = new List<byte>(reader.ReadBytes((int)Size));
+            samples = new List<short>();
+            for (uint i = 0; i < Size / sizeof(short); i++)
+                samples.Add(reader.ReadInt16());
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            writer.Write(binary.ToArray());
+            foreach (short s in samples)
+                writer.Write(s);
         }
 
         // Returns index of the start of the sample
         internal uint AddSample(short[] pcm16, bool bLoop, uint loopPos)
         {
-            uint len = (uint)pcm16.Length;
-            uint start = Size / 2;
-            // 2 bytes per sample
-            // 8 samples after looping
-            // 46 empty samples
-            Size += bLoop ? (len + 8 + 46) * 2 : (len + 46) * 2;
+            uint start = (uint)samples.Count;
 
             // Write wave
-            for (int i = 0; i < pcm16.Length; i++)
-                binary.AddRange(BitConverter.GetBytes(pcm16[i]));
+            samples.AddRange(pcm16);
 
             // If looping is enabled, write 8 samples from the loop point
             if (bLoop)
-                for (int i = 0; i < 8; i++)
-                    binary.AddRange(BitConverter.GetBytes(pcm16[loopPos + i]));
+            {
+                // In case (loopPos + i) is greater than the sample length
+                uint max = (uint)pcm16.Length - loopPos;
+                for (uint i = 0; i < 8; i++)
+                    samples.Add(pcm16[loopPos + (i % max)]);
+            }
 
             // Write 46 empty samples
-            for (int i = 0; i < 46; i++)
-                binary.AddRange(new byte[] { 0, 0 });
+            samples.AddRange(new short[46]);
 
+            Size = (uint)samples.Count * sizeof(short);
             return start;
         }
 
