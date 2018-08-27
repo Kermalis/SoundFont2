@@ -381,15 +381,15 @@ namespace Kermalis.SoundFont2
 
     public sealed class SMPLSubChunk : SF2Chunk
     {
-        byte[] binary; // Binary of bytes
+        List<byte> binary; // Binary of bytes
 
         internal SMPLSubChunk(SF2 inSf2) : base(inSf2, "smpl")
         {
-            binary = new byte[0];
+            binary = new List<byte>();
         }
         internal SMPLSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            binary = reader.ReadBytes((int)Size);
+            binary = new List<byte>(reader.ReadBytes((int)Size));
         }
         internal override void Write(BinaryWriter writer)
         {
@@ -405,28 +405,20 @@ namespace Kermalis.SoundFont2
             // 2 bytes per sample
             // 8 samples after looping
             // 46 empty samples
-            uint addedSize = bLoop ? (len + 8 + 46) * 2 : Size += (len + 46) * 2;
-            Size += addedSize;
+            Size += bLoop ? (len + 8 + 46) * 2 : (len + 46) * 2;
 
-            byte[] newData = new byte[addedSize];
+            // Write wave
+            for (int i = 0; i < pcm16.Length; i++)
+                binary.AddRange(BitConverter.GetBytes(pcm16[i]));
 
-            using (var writer = new BinaryWriter(new MemoryStream(newData)))
-            {
-                // Write wave
-                for (int i = 0; i < pcm16.Length; i++)
-                    writer.Write(pcm16[i]);
+            // If looping is enabled, write 8 samples from the loop point
+            if (bLoop)
+                for (int i = 0; i < 8; i++)
+                    binary.AddRange(BitConverter.GetBytes(pcm16[loopPos + i]));
 
-                // If looping is enabled, write 8 samples from the loop point
-                if (bLoop)
-                    for (int i = 0; i < 8; i++)
-                        writer.Write(pcm16[loopPos + i]);
-
-                // Write 46 empty samples
-                for (int i = 0; i < 46; i++)
-                    writer.Write((short)0);
-            }
-
-            binary = binary.Concat(newData).ToArray();
+            // Write 46 empty samples
+            for (int i = 0; i < 46; i++)
+                binary.AddRange(new byte[] { 0, 0 });
 
             return start;
         }
