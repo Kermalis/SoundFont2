@@ -7,7 +7,7 @@ namespace Kermalis.SoundFont2
 {
     public class SF2Chunk
     {
-        readonly SF2 sf2;
+        protected readonly SF2 sf2;
 
         readonly char[] chunkName; // Length 4
         public string ChunkName => new string(chunkName);
@@ -51,7 +51,7 @@ namespace Kermalis.SoundFont2
             writer.Write(listChunkName);
         }
 
-        public abstract uint CalculateSize();
+        internal abstract uint UpdateSize();
     }
 
     public sealed class SF2PresetHeader
@@ -304,12 +304,12 @@ namespace Kermalis.SoundFont2
 
     public sealed class VersionSubChunk : SF2Chunk
     {
-        // Output format is SoundFont v2.1
         public SF2VersionTag Version;
 
         internal VersionSubChunk(SF2 inSf2, string subChunkName) : base(inSf2, subChunkName)
         {
-            Size += SF2VersionTag.Size;
+            Size = SF2VersionTag.Size;
+            sf2.UpdateSize();
         }
         internal VersionSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
@@ -356,6 +356,7 @@ namespace Kermalis.SoundFont2
                 }
                 field = strAsList.ToArray();
                 Size = (uint)field.Length;
+                sf2.UpdateSize();
             }
         }
 
@@ -381,16 +382,12 @@ namespace Kermalis.SoundFont2
 
     public sealed class SMPLSubChunk : SF2Chunk
     {
-        List<short> samples; // Block of sample data
+        List<short> samples = new List<short>(); // Block of sample data
 
-        internal SMPLSubChunk(SF2 inSf2) : base(inSf2, "smpl")
-        {
-            samples = new List<short>();
-        }
+        internal SMPLSubChunk(SF2 inSf2) : base(inSf2, "smpl") { }
         internal SMPLSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            samples = new List<short>();
-            for (uint i = 0; i < Size / sizeof(short); i++)
+            for (int i = 0; i < Size / sizeof(short); i++)
                 samples.Add(reader.ReadInt16());
         }
         internal override void Write(BinaryWriter writer)
@@ -421,6 +418,7 @@ namespace Kermalis.SoundFont2
             samples.AddRange(new short[46]);
 
             Size = (uint)samples.Count * sizeof(short);
+            sf2.UpdateSize();
             return start;
         }
 
@@ -430,26 +428,26 @@ namespace Kermalis.SoundFont2
     public sealed class PHDRSubChunk : SF2Chunk
     {
         readonly List<SF2PresetHeader> presets = new List<SF2PresetHeader>();
-        public int Count => presets.Count;
+        public uint Count => (uint)presets.Count;
 
         internal PHDRSubChunk(SF2 inSf2) : base(inSf2, "phdr") { }
         internal PHDRSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2PresetHeader.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2PresetHeader.Size; i++)
                 presets.Add(new SF2PresetHeader(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < presets.Count; i++)
+            for (int i = 0; i < Count; i++)
                 presets[i].Write(writer);
         }
 
         internal void AddPreset(SF2PresetHeader preset)
         {
             presets.Add(preset);
-            Size += SF2PresetHeader.Size;
+            Size = Count * SF2PresetHeader.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Preset Header Chunk - Preset count = {Count}";
@@ -458,26 +456,26 @@ namespace Kermalis.SoundFont2
     public sealed class INSTSubChunk : SF2Chunk
     {
         readonly List<SF2Instrument> instruments = new List<SF2Instrument>();
-        public int Count => instruments.Count;
+        public uint Count => (uint)instruments.Count;
 
         internal INSTSubChunk(SF2 inSf2) : base(inSf2, "inst") { }
         internal INSTSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2Instrument.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2Instrument.Size; i++)
                 instruments.Add(new SF2Instrument(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < instruments.Count; i++)
+            for (int i = 0; i < Count; i++)
                 instruments[i].Write(writer);
         }
 
         internal void AddInstrument(SF2Instrument instrument)
         {
             instruments.Add(instrument);
-            Size += SF2Instrument.Size;
+            Size = Count * SF2Instrument.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Instrument Chunk - Instrument count = {Count}";
@@ -486,26 +484,26 @@ namespace Kermalis.SoundFont2
     public sealed class BAGSubChunk : SF2Chunk
     {
         readonly List<SF2Bag> bags = new List<SF2Bag>();
-        public int Count => bags.Count;
+        public uint Count => (uint)bags.Count;
 
         internal BAGSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pbag" : "ibag") { }
         internal BAGSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2Bag.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2Bag.Size; i++)
                 bags.Add(new SF2Bag(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < bags.Count; i++)
+            for (int i = 0; i < Count; i++)
                 bags[i].Write(writer);
         }
 
         internal void AddBag(SF2Bag bag)
         {
             bags.Add(bag);
-            Size += SF2Bag.Size;
+            Size = Count * SF2Bag.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Bag Chunk - Name = \"{ChunkName}\", " +
@@ -515,26 +513,26 @@ namespace Kermalis.SoundFont2
     public sealed class MODSubChunk : SF2Chunk
     {
         readonly List<SF2ModulatorList> modulators = new List<SF2ModulatorList>();
-        public int Count => modulators.Count;
+        public uint Count => (uint)modulators.Count;
 
         internal MODSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pmod" : "imod") { }
         internal MODSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2ModulatorList.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2ModulatorList.Size; i++)
                 modulators.Add(new SF2ModulatorList(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < modulators.Count; i++)
+            for (int i = 0; i < Count; i++)
                 modulators[i].Write(writer);
         }
 
         internal void AddModulator(SF2ModulatorList modulator)
         {
             modulators.Add(modulator);
-            Size += SF2ModulatorList.Size;
+            Size = Count * SF2ModulatorList.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Modulator Chunk - Name = \"{ChunkName}\", " +
@@ -544,26 +542,26 @@ namespace Kermalis.SoundFont2
     public sealed class GENSubChunk : SF2Chunk
     {
         readonly List<SF2GeneratorList> generators = new List<SF2GeneratorList>();
-        public int Count => generators.Count;
+        public uint Count => (uint)generators.Count;
 
         internal GENSubChunk(SF2 inSf2, bool preset) : base(inSf2, preset ? "pgen" : "igen") { }
         internal GENSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2GeneratorList.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2GeneratorList.Size; i++)
                 generators.Add(new SF2GeneratorList(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < generators.Count; i++)
+            for (int i = 0; i < Count; i++)
                 generators[i].Write(writer);
         }
 
         internal void AddGenerator(SF2GeneratorList generator)
         {
             generators.Add(generator);
-            Size += SF2GeneratorList.Size;
+            Size = Count * SF2GeneratorList.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Generator Chunk - Name = \"{ChunkName}\", " +
@@ -573,26 +571,26 @@ namespace Kermalis.SoundFont2
     public sealed class SHDRSubChunk : SF2Chunk
     {
         readonly List<SF2SampleHeader> samples = new List<SF2SampleHeader>();
-        public int Count => samples.Count;
+        public uint Count => (uint)samples.Count;
 
         internal SHDRSubChunk(SF2 inSf2) : base(inSf2, "shdr") { }
         internal SHDRSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            uint amt = Size / SF2SampleHeader.Size;
-            for (int i = 0; i < amt; i++)
+            for (int i = 0; i < Size / SF2SampleHeader.Size; i++)
                 samples.Add(new SF2SampleHeader(inSf2, reader));
         }
         internal override void Write(BinaryWriter writer)
         {
             base.Write(writer);
-            for (int i = 0; i < samples.Count; i++)
+            for (int i = 0; i < Count; i++)
                 samples[i].Write(writer);
         }
 
         internal void AddSample(SF2SampleHeader sample)
         {
             samples.Add(sample);
-            Size += SF2SampleHeader.Size;
+            Size = Count * SF2SampleHeader.Size;
+            sf2.UpdateSize();
         }
 
         public override string ToString() => $"Sample Header Chunk - Sample header count = {Count}";
@@ -634,14 +632,14 @@ namespace Kermalis.SoundFont2
             subChunks.Add(new VersionSubChunk(inSf2, "ifil") { Version = new SF2VersionTag { Major = 2, Minor = 1 } });
             subChunks.Add(new HeaderSubChunk(inSf2, "isng") { Field = string.IsNullOrEmpty(engine) ? "EMU8000" : engine });
             subChunks.Add(new HeaderSubChunk(inSf2, "INAM") { Field = string.IsNullOrEmpty(bank) ? "General MIDI" : bank });
-
-            CalculateSize();
+            sf2.UpdateSize();
         }
         internal InfoListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
             var startOffset = reader.BaseStream.Position;
             while (reader.BaseStream.Position < startOffset + Size - 4) // The 4 represents the INFO that was already read
             {
+                // Peek 4 chars for the chunk name
                 char[] name = reader.ReadChars(4);
                 reader.BaseStream.Position -= 4;
                 string strName = new string(name);
@@ -662,7 +660,6 @@ namespace Kermalis.SoundFont2
                         throw new NotSupportedException($"Unsupported chunk name at 0x{reader.BaseStream.Position:X}: \"{strName}\"");
                 }
             }
-            CalculateSize();
         }
         internal override void Write(BinaryWriter writer)
         {
@@ -671,7 +668,7 @@ namespace Kermalis.SoundFont2
                 sub.Write(writer);
         }
 
-        public override uint CalculateSize()
+        internal override uint UpdateSize()
         {
             Size = 4;
             foreach (var sub in subChunks)
@@ -689,12 +686,11 @@ namespace Kermalis.SoundFont2
         internal SdtaListChunk(SF2 inSf2) : base(inSf2, "sdta")
         {
             SMPLSubChunk = new SMPLSubChunk(inSf2);
-            CalculateSize();
+            sf2.UpdateSize();
         }
         internal SdtaListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
             SMPLSubChunk = new SMPLSubChunk(inSf2, reader);
-            CalculateSize();
         }
         internal override void Write(BinaryWriter writer)
         {
@@ -702,11 +698,10 @@ namespace Kermalis.SoundFont2
             SMPLSubChunk.Write(writer);
         }
 
-        public override uint CalculateSize()
+        internal override uint UpdateSize()
         {
-            Size = 4;
-            Size += SMPLSubChunk.Size + 8;
-            return Size;
+            return Size = 4
+                + SMPLSubChunk.Size + 8;
         }
 
         public override string ToString() => $"Sample Data List Chunk";
@@ -735,7 +730,7 @@ namespace Kermalis.SoundFont2
             IMODSubChunk = new MODSubChunk(inSf2, false);
             IGENSubChunk = new GENSubChunk(inSf2, false);
             SHDRSubChunk = new SHDRSubChunk(inSf2);
-            CalculateSize();
+            sf2.UpdateSize();
         }
         internal PdtaListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
@@ -748,22 +743,20 @@ namespace Kermalis.SoundFont2
             IMODSubChunk = new MODSubChunk(inSf2, reader);
             IGENSubChunk = new GENSubChunk(inSf2, reader);
             SHDRSubChunk = new SHDRSubChunk(inSf2, reader);
-            CalculateSize();
         }
 
-        public override uint CalculateSize()
+        internal override uint UpdateSize()
         {
-            Size = 4;
-            Size += PHDRSubChunk.Size + 8;
-            Size += PBAGSubChunk.Size + 8;
-            Size += PMODSubChunk.Size + 8;
-            Size += PGENSubChunk.Size + 8;
-            Size += INSTSubChunk.Size + 8;
-            Size += IBAGSubChunk.Size + 8;
-            Size += IMODSubChunk.Size + 8;
-            Size += IGENSubChunk.Size + 8;
-            Size += SHDRSubChunk.Size + 8;
-            return Size;
+            return Size = 4
+                + PHDRSubChunk.Size + 8
+                + PBAGSubChunk.Size + 8
+                + PMODSubChunk.Size + 8
+                + PGENSubChunk.Size + 8
+                + INSTSubChunk.Size + 8
+                + IBAGSubChunk.Size + 8
+                + IMODSubChunk.Size + 8
+                + IGENSubChunk.Size + 8
+                + SHDRSubChunk.Size + 8;
         }
 
         internal override void Write(BinaryWriter writer)

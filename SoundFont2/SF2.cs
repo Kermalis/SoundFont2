@@ -10,12 +10,12 @@ namespace Kermalis.SoundFont2
         SdtaListChunk soundChunk;
         PdtaListChunk hydraChunk;
 
-        internal int IBAGCount => hydraChunk.IBAGSubChunk.Count;
-        internal int IGENCount => hydraChunk.IGENSubChunk.Count;
-        internal int IMODCount => hydraChunk.IMODSubChunk.Count;
-        internal int PBAGCount => hydraChunk.PBAGSubChunk.Count;
-        internal int PGENCount => hydraChunk.PGENSubChunk.Count;
-        internal int PMODCount => hydraChunk.PMODSubChunk.Count;
+        internal uint IBAGCount => hydraChunk.IBAGSubChunk.Count;
+        internal uint IGENCount => hydraChunk.IGENSubChunk.Count;
+        internal uint IMODCount => hydraChunk.IMODSubChunk.Count;
+        internal uint PBAGCount => hydraChunk.PBAGSubChunk.Count;
+        internal uint PGENCount => hydraChunk.PGENSubChunk.Count;
+        internal uint PMODCount => hydraChunk.PMODSubChunk.Count;
 
         // For creating
         public SF2(string engine = "", string bank = "")
@@ -50,11 +50,6 @@ namespace Kermalis.SoundFont2
             using (var writer = new BinaryWriter(File.Open(path, FileMode.Create), Encoding.ASCII))
             {
                 AddTerminals();
-
-                size = 4;
-                size += infoChunk.CalculateSize() + 8;
-                size += soundChunk.CalculateSize() + 8;
-                size += hydraChunk.CalculateSize() + 8;
 
                 writer.Write("RIFF".ToCharArray());
                 writer.Write(size);
@@ -160,7 +155,6 @@ namespace Kermalis.SoundFont2
                 PitchCorrection = pitchCorrection
             });
         }
-        // Required by the standard
         void AddTerminals()
         {
             AddSampleHeader("EOS", 0, 0, 0, 0, 0, 0, 0);
@@ -172,6 +166,16 @@ namespace Kermalis.SoundFont2
             AddPresetBag();
             AddPresetGenerator();
             AddPresetModulator();
+        }
+
+        internal void UpdateSize()
+        {
+            if (infoChunk == null || soundChunk == null || hydraChunk == null)
+                return;
+            size = 4
+                + infoChunk.UpdateSize() + 8
+                + soundChunk.UpdateSize() + 8
+                + hydraChunk.UpdateSize() + 8;
         }
     }
 }
