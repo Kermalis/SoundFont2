@@ -62,7 +62,8 @@ namespace Kermalis.SoundFont2
         }
 
 
-        public void AddSample(short[] pcm16, string name, bool bLoop, uint loopPos, uint sampleRate, byte originalKey, sbyte pitchCorrection)
+        // Returns sample index
+        public uint AddSample(short[] pcm16, string name, bool bLoop, uint loopPos, uint sampleRate, byte originalKey, sbyte pitchCorrection)
         {
             uint start = soundChunk.SMPLSubChunk.AddSample(pcm16, bLoop, loopPos);
             // If the sample is looped the standard requires us to add the 8 bytes from the start of the loop to the end
@@ -80,7 +81,7 @@ namespace Kermalis.SoundFont2
                 loopStart = 0; loopEnd = 0;
             }
 
-            AddSampleHeader(name, start, end, loopStart, loopEnd, sampleRate, originalKey, pitchCorrection);
+            return AddSampleHeader(name, start, end, loopStart, loopEnd, sampleRate, originalKey, pitchCorrection);
         }
         public void AddInstrument(string name)
         {
@@ -141,9 +142,9 @@ namespace Kermalis.SoundFont2
             });
         }
 
-        void AddSampleHeader(string name, uint start, uint end, uint loopStart, uint loopEnd, uint sampleRate, byte originalKey, sbyte pitchCorrection)
+        uint AddSampleHeader(string name, uint start, uint end, uint loopStart, uint loopEnd, uint sampleRate, byte originalKey, sbyte pitchCorrection)
         {
-            hydraChunk.SHDRSubChunk.AddSample(new SF2SampleHeader(this)
+            return hydraChunk.SHDRSubChunk.AddSample(new SF2SampleHeader(this)
             {
                 SampleName = name,
                 Start = start,

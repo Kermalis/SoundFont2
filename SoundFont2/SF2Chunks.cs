@@ -586,11 +586,12 @@ namespace Kermalis.SoundFont2
                 samples[i].Write(writer);
         }
 
-        internal void AddSample(SF2SampleHeader sample)
+        internal uint AddSample(SF2SampleHeader sample)
         {
             samples.Add(sample);
             Size = Count * SF2SampleHeader.Size;
             sf2.UpdateSize();
+            return Count - 1;
         }
 
         public override string ToString() => $"Sample Header Chunk - Sample header count = {Count}";
