@@ -471,11 +471,12 @@ namespace Kermalis.SoundFont2
                 instruments[i].Write(writer);
         }
 
-        internal void AddInstrument(SF2Instrument instrument)
+        internal uint AddInstrument(SF2Instrument instrument)
         {
             instruments.Add(instrument);
             Size = Count * SF2Instrument.Size;
             sf2.UpdateSize();
+            return Count - 1;
         }
 
         public override string ToString() => $"Instrument Chunk - Instrument count = {Count}";

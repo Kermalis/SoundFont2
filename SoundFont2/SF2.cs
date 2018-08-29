@@ -83,9 +83,10 @@ namespace Kermalis.SoundFont2
 
             return AddSampleHeader(name, start, end, loopStart, loopEnd, sampleRate, originalKey, pitchCorrection);
         }
-        public void AddInstrument(string name)
+        // Returns instrument index
+        public uint AddInstrument(string name)
         {
-            hydraChunk.INSTSubChunk.AddInstrument(new SF2Instrument(this)
+            return hydraChunk.INSTSubChunk.AddInstrument(new SF2Instrument(this)
             {
                 InstrumentName = name,
                 InstrumentBagIndex = (ushort)IBAGCount
