@@ -62,7 +62,7 @@ namespace Kermalis.SoundFont2
         char[] presetName; // Length 20
         public string PresetName
         {
-            get => new string(presetName);
+            get => new string(presetName).TrimEnd('\0');
             set => SF2Utils.TruncateOrNot(value, 20, ref presetName);
         }
         public ushort Preset, Bank, PresetBagIndex;
@@ -115,13 +115,13 @@ namespace Kermalis.SoundFont2
             sf2 = inSf2;
             if (preset)
             {
-                GeneratorIndex = (ushort)sf2.PGENCount;
-                ModulatorIndex = (ushort)sf2.PMODCount;
+                GeneratorIndex = (ushort)sf2.HydraChunk.PGENSubChunk.Count;
+                ModulatorIndex = (ushort)sf2.HydraChunk.PMODSubChunk.Count;
             }
             else
             {
-                GeneratorIndex = (ushort)sf2.IGENCount;
-                ModulatorIndex = (ushort)sf2.IMODCount;
+                GeneratorIndex = (ushort)sf2.HydraChunk.IGENSubChunk.Count;
+                ModulatorIndex = (ushort)sf2.HydraChunk.IMODSubChunk.Count;
             }
         }
         internal SF2Bag(SF2 inSf2, BinaryReader reader)
@@ -217,7 +217,7 @@ namespace Kermalis.SoundFont2
         char[] instrumentName; // Length 20
         public string InstrumentName
         {
-            get => new string(instrumentName);
+            get => new string(instrumentName).TrimEnd('\0');
             set => SF2Utils.TruncateOrNot(value, 20, ref instrumentName);
         }
         public ushort InstrumentBagIndex;
@@ -250,7 +250,7 @@ namespace Kermalis.SoundFont2
         char[] sampleName; // Length 20
         public string SampleName
         {
-            get => new string(sampleName);
+            get => new string(sampleName).TrimEnd('\0');
             set => SF2Utils.TruncateOrNot(value, 20, ref sampleName);
         }
         public uint Start;
@@ -313,11 +313,7 @@ namespace Kermalis.SoundFont2
         }
         internal VersionSubChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
         {
-            Version = new SF2VersionTag
-            {
-                Major = reader.ReadUInt16(),
-                Minor = reader.ReadUInt16()
-            };
+            Version = new SF2VersionTag(reader.ReadUInt16(), reader.ReadUInt16());
         }
         internal override void Write(BinaryWriter writer)
         {
@@ -336,7 +332,7 @@ namespace Kermalis.SoundFont2
         char[] field;
         public string Field
         {
-            get => new string(field);
+            get => new string(field).TrimEnd('\0');
             set
             {
                 var strAsList = value.ToCharArray().ToList();
@@ -606,34 +602,192 @@ namespace Kermalis.SoundFont2
     {
         readonly List<SF2Chunk> subChunks = new List<SF2Chunk>();
 
-        /*public InfoListChunk(SF2 inSf2, string engine, string bank, string rom, SF2VersionTag rom_revision, string date, string designer, string products, string copyright, string comment, string tools)
-            : base(inSf2, "INFO")
+        const string defaultEngine = "EMU8000";
+        public string Engine
         {
-
-            // Optional sub-chunks
-            if (!string.IsNullOrEmpty(rom))
-                subChunks.Add(new HeaderSubChunk(inSf2, "irom", rom));
-            if (rom_revision != null)
-                subChunks.Add(new VersionSubChunk(inSf2, "iver", rom_revision));
-            if (!string.IsNullOrEmpty(date))
-                subChunks.Add(new HeaderSubChunk(inSf2, "ICRD", date));
-            if (!string.IsNullOrEmpty(designer))
-                subChunks.Add(new HeaderSubChunk(inSf2, "IENG", designer));
-            if (!string.IsNullOrEmpty(products))
-                subChunks.Add(new HeaderSubChunk(inSf2, "IPRD", products));
-            if (!string.IsNullOrEmpty(copyright))
-                subChunks.Add(new HeaderSubChunk(inSf2, "ICOP", copyright));
-            if (!string.IsNullOrEmpty(comment))
-                subChunks.Add(new HeaderSubChunk(inSf2, "ICMT", comment, 0x10000));
-            if (!string.IsNullOrEmpty(tools))
-                subChunks.Add(new HeaderSubChunk(inSf2, "ISFT", tools));
-        }*/
-        internal InfoListChunk(SF2 inSf2, string engine = "", string bank = "") : base(inSf2, "INFO")
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "isng") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                {
+                    subChunks.Add(new HeaderSubChunk(sf2, "isng") { Field = defaultEngine });
+                    return defaultEngine;
+                }
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "isng") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "isng") { Field = value });
+            }
+        }
+        const string defaultBank = "General MIDI";
+        public string Bank
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "INAM") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                {
+                    subChunks.Add(new HeaderSubChunk(sf2, "INAM") { Field = defaultBank });
+                    return defaultBank;
+                }
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "INAM") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "INAM") { Field = value });
+            }
+        }
+        public string ROM
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "irom") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "irom") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "irom") { Field = value });
+            }
+        }
+        public SF2VersionTag ROMVersion
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "iver") is VersionSubChunk chunk)
+                    return chunk.Version;
+                else
+                    return null;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "iver") is VersionSubChunk chunk)
+                    chunk.Version = value;
+                else
+                    subChunks.Add(new VersionSubChunk(sf2, "iver") { Version = value });
+            }
+        }
+        public string Date
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICRD") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICRD") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "ICRD") { Field = value });
+            }
+        }
+        public string Designer
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "IENG") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "IENG") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "IENG") { Field = value });
+            }
+        }
+        public string Products
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "IPRD") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "IPRD") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "IPRD") { Field = value });
+            }
+        }
+        public string Copyright
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICOP") is HeaderSubChunk icop)
+                    return icop.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICOP") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "ICOP") { Field = value });
+            }
+        }
+        const int commentMaxSize = 0x10000;
+        public string Comment
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICMT") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "ICMT") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "ICMT", commentMaxSize) { Field = value });
+            }
+        }
+        public string Tools
+        {
+            get
+            {
+                if (subChunks.Find(s => s.ChunkName == "ISFT") is HeaderSubChunk chunk)
+                    return chunk.Field;
+                else
+                    return string.Empty;
+            }
+            set
+            {
+                if (subChunks.Find(s => s.ChunkName == "ISFT") is HeaderSubChunk chunk)
+                    chunk.Field = value;
+                else
+                    subChunks.Add(new HeaderSubChunk(sf2, "ISFT") { Field = value });
+            }
+        }
+        
+        internal InfoListChunk(SF2 inSf2) : base(inSf2, "INFO")
         {
             // Mandatory sub-chunks
-            subChunks.Add(new VersionSubChunk(inSf2, "ifil") { Version = new SF2VersionTag { Major = 2, Minor = 1 } });
-            subChunks.Add(new HeaderSubChunk(inSf2, "isng") { Field = string.IsNullOrEmpty(engine) ? "EMU8000" : engine });
-            subChunks.Add(new HeaderSubChunk(inSf2, "INAM") { Field = string.IsNullOrEmpty(bank) ? "General MIDI" : bank });
+            subChunks.Add(new VersionSubChunk(inSf2, "ifil") { Version = new SF2VersionTag(2, 1) });
+            subChunks.Add(new HeaderSubChunk(inSf2, "isng") { Field = defaultEngine });
+            subChunks.Add(new HeaderSubChunk(inSf2, "INAM") { Field = defaultBank });
             sf2.UpdateSize();
         }
         internal InfoListChunk(SF2 inSf2, BinaryReader reader) : base(inSf2, reader)
@@ -647,7 +801,7 @@ namespace Kermalis.SoundFont2
                 string strName = new string(name);
                 switch (strName)
                 {
-                    case "ICMT": subChunks.Add(new HeaderSubChunk(inSf2, reader, 0x10000)); break;
+                    case "ICMT": subChunks.Add(new HeaderSubChunk(inSf2, reader, commentMaxSize)); break;
                     case "ifil":
                     case "iver": subChunks.Add(new VersionSubChunk(inSf2, reader)); break;
                     case "isng":

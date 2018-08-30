@@ -7,8 +7,13 @@ namespace Kermalis.SoundFont2
     {
         public const uint Size = 4;
 
-        public ushort Major;
-        public ushort Minor;
+        public readonly ushort Major;
+        public readonly ushort Minor;
+
+        public SF2VersionTag(ushort major, ushort minor)
+        {
+            Major = major; Minor = minor;
+        }
 
         public override string ToString() => $"v{Major}.{Minor}";
     }
