@@ -1,25 +1,40 @@
-﻿using System.Runtime.InteropServices;
+﻿using Kermalis.EndianBinaryIO;
+using System.Runtime.InteropServices;
 
 namespace Kermalis.SoundFont2
 {
-    // SF2 v2.1 spec page 16
+    /// <summary>SF2 v2.1 spec page 16</summary>
     public sealed class SF2VersionTag
     {
         public const uint Size = 4;
 
-        public readonly ushort Major;
-        public readonly ushort Minor;
+        public ushort Major { get; }
+        public ushort Minor { get; }
 
         public SF2VersionTag(ushort major, ushort minor)
         {
-            Major = major; Minor = minor;
+            Major = major;
+            Minor = minor;
+        }
+        internal SF2VersionTag(EndianBinaryReader reader)
+        {
+            Major = reader.ReadUInt16();
+            Minor = reader.ReadUInt16();
         }
 
-        public override string ToString() => $"v{Major}.{Minor}";
+        internal void Write(EndianBinaryWriter writer)
+        {
+            writer.Write(Major);
+            writer.Write(Minor);
+        }
+
+        public override string ToString()
+        {
+            return $"v{Major}.{Minor}";
+        }
     }
 
-    // SF2 spec v2.1 page 19
-    // Two bytes that can handle either two 8-bit values or a single 16-bit value
+    /// <summary>SF2 spec v2.1 page 19 - Two bytes that can handle either two 8-bit values or a single 16-bit value</summary>
     [StructLayout(LayoutKind.Explicit)]
     public struct SF2GeneratorAmount
     {
@@ -28,10 +43,13 @@ namespace Kermalis.SoundFont2
         [FieldOffset(0)] public short Amount;
         [FieldOffset(0)] public ushort UAmount;
 
-        public override string ToString() => $"BLo = {LowByte}, BHi = {HighByte}, Sh = {Amount}, U = {UAmount}";
+        public override string ToString()
+        {
+            return $"BLo = {LowByte}, BHi = {HighByte}, Sh = {Amount}, U = {UAmount}";
+        }
     }
 
-    // SF2 v2.1 spec page 20
+    /// <summary>SF2 v2.1 spec page 20</summary>
     public enum SF2SampleLink : ushort
     {
         MonoSample = 1,
@@ -44,7 +62,7 @@ namespace Kermalis.SoundFont2
         RomLinkedSample = 0x8008
     }
 
-    // SF2 v2.1 spec page 38
+    /// <summary>SF2 v2.1 spec page 38</summary>
     public enum SF2Generator : ushort
     {
         StartAddrsOffset = 0,
@@ -102,8 +120,7 @@ namespace Kermalis.SoundFont2
         EndOper = 60
     }
 
-    // Modulator's internal enumeration class
-    // SF2 v2.1 spec page 50
+    /// <summary>SF2 v2.1 spec page 50</summary>
     public enum SF2Modulator : ushort
     {
         None = 0,
@@ -115,7 +132,7 @@ namespace Kermalis.SoundFont2
         PitchWheelSensivity = 16
     }
 
-    // SF2 v2.1 spec page 52
+    /// <summary>SF2 v2.1 spec page 52</summary>
     public enum SF2Transform : ushort
     {
         Linear = 0,
